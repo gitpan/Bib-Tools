@@ -28,6 +28,17 @@ if (length($google2) > 5) {
   if (!($google2 =~ m/^http/)) { $google2 = "http://".$google2;}
   $refs->add_google_search($google2);
 }
+my $dblp = scalar $q->param('dblp');
+#http://dblp.uni-trier.de/pers/xx/l/Leith:Douglas_J=.xml
+if (length($dblp) > 5) {
+  if (!($dblp =~ m/^http/)) { $dblp = "http://".$dblp;}
+  if ($dblp =~ m/http:\/\/dblp.uni-trier.de\/pers\/xx\/l\/.+/) {
+     # looks like a valid dblp url
+     $refs->add_dblp($dblp);
+  } else {
+     print "<p style='color:red'>DBLP url looks invalid: ", $dblp,"</p>";
+  }
+}
 my @values = $q->multi_param('refs');
 foreach my $value (@values) {
   #NB: CGI has already carried out URL decoding

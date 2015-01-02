@@ -1,6 +1,6 @@
 ############################################################
 #
-#   Bib::Tools - for managing collections of Bib::CrossRef references.
+#   Bib::Tools - For managing collections of Bib::CrossRef references.
 #
 ############################################################
 
@@ -21,17 +21,18 @@ use HTML::TreeBuilder::XPath;
 use XML::Simple qw(XMLin);
 use BibTeX::Parser qw(new next);
 use IO::File;
+#use Data::Dumper;
 use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS @ISA);
 
 #use LWP::Protocol::https;
 #use Data::Dumper;
 
-$VERSION = '0.02';
+$VERSION = '0.03';
 @ISA = qw(Exporter);
 @EXPORT = qw();
 @EXPORT_OK = qw(
-sethtml clearhtml add_details add_google add_google_search add_orcid
-send_resp print print_nodoi num num_nodoi getref getref_nodoi
+sethtml clearhtml add_details add_google add_google_search add_orcid add_fromfile add_dblp
+send_resp print print_nodoi num num_nodoi getref getref_nodoi append
 );
 %EXPORT_TAGS = (all => \@EXPORT_OK);
 
@@ -43,6 +44,7 @@ sub new {
     $self->{duprefs} = [];
     $self->{html}=0;
     $self->{ratelimit}=5; # limit of 5 crossref queries per sec
+    $self->{last} = {};
     bless $self;
   
     my $ratelimit = $_[1];
@@ -98,14 +100,21 @@ sub _split_duplicates {
   $self->{nodoi_refs} = \@nodoi_refs;
 }
 
+sub append {
+  # add new reference to end of existing list
+  my $self = shift @_;
+  my $ref = shift @_;
+  push @{$self->{refs}}, $ref;
+}
+
 sub add_details {
   # given an array of raw strings, try to convert into paper references
   
   my $self = shift @_;
   foreach my $cites (@_) {
-    my $ref = Bib::CrossRef->new();
-    $ref->set_details($cites);
-    push @{$self->{refs}}, $ref;
+    $self->{last} = Bib::CrossRef->new();
+    $self->{last}->parse_text($cites);
+    $self->append($self->{last});
     sleep 1/(0.001+$self->{ratelimit}); # rate limit queries to crossref
   }
   $self->_split_duplicates();
@@ -174,6 +183,149 @@ sub add_google_search {
   }
 }
 
+sub add_dblp {
+  # get details using DBLP XML API
+  
+  my $self = shift @_;
+  my $url = shift @_;
+  my $maxnum = shift @_; if (!defined($maxnum)) {$maxnum=-1;}
+  
+  my $ua = LWP::UserAgent->new;
+  $ua->agent('Mozilla/5.0');
+  my $req = HTTP::Request->new(GET => $url);
+  my $res = $ua->request($req);
+  if ($res->is_success) {
+    my $xs = XML::Simple->new();
+    my $data = $xs->XMLin($res->decoded_content);
+    my @cites = $data->{'r'};
+    my $num=0;
+    foreach my $c (@{$cites[0]}) {
+      $num++; if ($maxnum>0 && $num>$maxnum) {last;}  # mainly for testing
+      my $ref={};
+      my $cite;
+      my @k = keys %{$c};
+      $ref->{'genre'} = $k[0];
+      $cite = $c->{$ref->{'genre'}};
+      my $ee = $cite->{'ee'};
+      if ($ee =~ m/dx.doi.org/) {
+        # we have a DOI, lets call crossref
+        $ee =~ s/http:\/\/dx.doi.org\///;
+        $self->add_details($ee);
+        next; # move on to next record
+      }
+      my $temp = $cite->{'year'};
+      $temp .= ' '.$cite->{'title'};
+      if (defined $cite->{'journal'}) {
+        $temp .= ' '.$cite->{'journal'};
+      } elsif (defined $cite->{'booktitle'}) {
+        $temp .= ' '.$cite->{'booktitle'};
+      }
+      my $auth='';
+      if (ref($cite->{'author'}) eq "HASH") {
+        $auth = $cite->{'author'};
+      } else {
+        foreach my $au (@{$cite->{'author'}}) { $auth .= $au.", ";}
+      }
+      my $r = Bib::CrossRef->new;
+      $r->parse_text($auth.' '.$temp);
+      if ($r->score >= 1) {
+        # found an ok match, lets use it
+        $self->append($r);
+        next; # move on
+      }
+      #next; # stop here for now
+      
+      # we got a poor match, lets use the rest of the dblp data
+      $r = Bib::CrossRef->new;
+      $r->_setatitle($cite->{'title'});
+      if (defined $cite->{'journal'}) {
+        $r->_setgenre('article');
+        $r->_setjtitle($cite->{'journal'});
+      } elsif (defined $cite->{'booktitle'}) {
+        $r->_setgenre('proceeding');
+        $r->_setjtitle($cite->{'booktitle'});
+      }
+      $auth='';
+      if (ref($cite->{'author'}) eq "HASH") {
+        $r->_setauthcount(1);
+        $r->_setauth(1,$cite->{'author'});
+        $auth = $cite->{'author'};
+      } else {
+        my $count = 0;
+        foreach my $au (@{$cite->{'author'}}) {
+          $count++;
+          $r->_setauth($count, $au);
+          $auth .= $au.", ";
+        }
+        $r->_setauthcount($count);
+      }
+      if (defined $cite->{'volume'}) {$r->_setvolume($cite->{'volume'});}
+      if (defined $cite->{'number'}) {$r->_setissue($cite->{'number'});}
+      if (defined $cite->{'pages'}) {
+        my @bits = split('-',$cite->{'pages'});
+        if (defined $bits[0]) {$r->_setspage($bits[0]);}
+        if (defined $bits[1]) {$r->_setepage($bits[1]);}
+      }
+      $r->_setscore(1);
+      $r->{ref}->{'query'} = $auth." ".$temp; # temporary hack, need to add _setquery method to Bib::CrossRef.
+      # add manually constructed record
+      $self->append($r);
+    }
+    $self->_split_duplicates();
+  } else {
+    $self->_err("Problem with $url: ".$res->status_line);
+  }
+}
+
+sub _get_orcid_doi {
+  my $cite = shift @_;
+  
+  my $doi='';
+  if (ref($cite->{'work-external-identifiers'}->{'work-external-identifier'}) eq "HASH") {
+    # a single value
+    my $id = $cite->{'work-external-identifiers'}->{'work-external-identifier'};
+    if ($id->{'work-external-identifier-type'} =~ m/doi/) {
+      # and its a DOI
+      $doi =  $id->{'work-external-identifier-id'};
+    } else {
+      #print("Note: no DOI in ORCID for:".$cite->{'work-title'}->{'title'}.", only ".$id->{'work-external-identifier-type'}."=".$id->{'work-external-identifier-id'}."\n");
+    }
+  } else {
+    # multiple values
+    my $found = 0; my $types;
+    foreach my $id (@{$cite->{'work-external-identifiers'}->{'work-external-identifier'}}) {
+      if ($id->{'work-external-identifier-type'} =~ m/doi/) {
+        # its a DOI
+        $doi =  $id->{'work-external-identifier-id'};
+        $found=1;
+        last; # exit loop
+      }
+      $types = $types.$id->{'work-external-identifier-type'}.'='.$id->{'work-external-identifier-id'}." ";
+    }
+    if (!$found) {
+      #print("Note: no DOI in ORCID for:".$cite->{'work-title'}->{'title'}.", only $types \n");
+    }
+  }
+  return $doi;
+}
+
+sub _get_orcid_auth {
+  my $cite = shift @_;
+
+  my $auth='';
+  if (ref($cite->{'work-contributors'}->{'contributor'}) eq "HASH") {
+    # single author
+    my $au = $cite->{'work-contributors'}->{'contributor'};
+    if ($au->{'contributor-attributes'}->{'contributor-role'} =~ m/author/) {$auth = $au->{'credit-name'}->{'content'};}
+  } else {
+    # multiple authors
+    foreach my $au (@{$cite->{'work-contributors'}->{'contributor'}}) {
+      if ($au->{'contributor-attributes'}->{'contributor-role'} =~ m/author/) {$auth .= $au->{'credit-name'}->{'content'}.", ";}
+    }
+  }
+  return $auth;
+}
+
 sub add_orcid {
   # get paper details from orcid using API
   
@@ -187,48 +339,97 @@ sub add_orcid {
     # the orcid response is utf8 xml
     my $data = $xs->XMLin($res->decoded_content);
     my @cites = $data->{'orcid-profile'}->{'orcid-activities'}->{'orcid-works'}->{'orcid-work'};
-    my @refs;
     foreach my $cite (@{$cites[0]}) {
       my $ref={};
-      if (ref($cite->{'work-external-identifiers'}->{'work-external-identifier'}) eq "HASH") {
-        # a single value
-        my $id = $cite->{'work-external-identifiers'}->{'work-external-identifier'};
-        if ($id->{'work-external-identifier-type'} =~ m/doi/) {
-          # and its a DOI
-          $ref->{'doi'} =  $id->{'work-external-identifier-id'};
-        } else {
-          #print("Note: no DOI in ORCID for:".$cite->{'work-title'}->{'title'}.", only ".$id->{'work-external-identifier-type'}."=".$id->{'work-external-identifier-id'}."\n");
-        }
-      } else {
-        # multiple values
-        my $found = 0; my $types;
-        foreach my $id (@{$cite->{'work-external-identifiers'}->{'work-external-identifier'}}) {
-          if ($id->{'work-external-identifier-type'} =~ m/doi/) {
-            # its a DOI
-            $ref->{'doi'} =  $id->{'work-external-identifier-id'};
-            $found=1;
-            last; # exit loop
-          }
-          $types = $types.$id->{'work-external-identifier-type'}.'='.$id->{'work-external-identifier-id'}." ";
-        }
-        if (!$found) {
-          #print("Note: no DOI in ORCID for:".$cite->{'work-title'}->{'title'}.", only $types \n");
-        }
-      }
-      if (defined $ref->{'doi'}) {
+      my $doi = _get_orcid_doi($cite);
+      if (defined $doi) {
         # use DOI to search.crossref.org
-        $self->add_details($ref->{'doi'});
-      } else {
-        # use title etc to search.crossref.org
-        my $temp='';
-        if (exists $cite->{'work-title'}->{'title'}) {$ref->{'atitle'} = $cite->{'work-title'}->{'title'};}
-        if (exists $cite->{'journal-title'}) {$ref->{'stitle'} = $cite->{'journal-title'};}
-        if (exists $cite->{'publication-date'}->{'year'}) {$ref->{'date'} = $cite->{'publication-date'}->{'year'};}
-        if (exists $cite->{'work-type'}) {$ref->{'genre'} = $cite->{'work-type'};}
-        $temp = $ref->{'date'}.' '.$ref->{'atitle'}.' '.$ref->{'stitle'};
-        $self->add_details($temp);
+        my $r = Bib::CrossRef->new;
+        $r->parse_text($doi);
+        $self->append($r);
+        next;  # move on
       }
+      # use title etc to search.crossref.org
+      my $temp='';
+      if (exists $cite->{'publication-date'}->{'year'}) {$temp = $cite->{'publication-date'}->{'year'};}
+      if (exists $cite->{'work-title'}->{'title'}) {$temp .= ' '.$cite->{'work-title'}->{'title'};}
+      if (exists $cite->{'journal-title'}) {$temp = ' '.$cite->{'journal-title'};}
+      my $auth = _get_orcid_auth($cite);
+      my $r = Bib::CrossRef->new;
+      $r->parse_text($auth.' '.$temp);
+      if ($r->score >= 1) {
+        # found an ok match, lets use it
+        $self->append($r);
+        next; # move on
+      }
+    
+      #next; # stop here for now
+
+      # for a poor match, try to extract rest of info from orcid
+      $r = Bib::CrossRef->new;
+      
+      if (exists $cite->{'work-title'}->{'title'}) {$r->_setatitle($cite->{'work-title'}->{'title'});}
+      if (exists $cite->{'journal-title'}) {$r->_setstitle($cite->{'journal-title'});}
+      if (exists $cite->{'publication-date'}->{'year'}) {$r->_setdate($cite->{'publication-date'}->{'year'});}
+      if (exists $cite->{'work-type'}) {$r->_setgenre($cite->{'work-type'});}
+      
+      my $authcount=0; $auth='';
+      if (ref($cite->{'work-contributors'}->{'contributor'}) eq "HASH") {
+        # single author
+        my $au = $cite->{'work-contributors'}->{'contributor'};
+        if ($au->{'contributor-attributes'}->{'contributor-role'} =~ m/author/) {
+          $authcount++;
+          $r->_setauth($authcount,$au->{'credit-name'}->{'content'});
+          $auth = $au->{'credit-name'}->{'content'};
+        }
+      } else {
+        # multiple authors
+        foreach my $au (@{$cite->{'work-contributors'}->{'contributor'}}) {
+          if ($au->{'contributor-attributes'}->{'contributor-role'} =~ m/author/) {
+            $authcount++;
+            $r->_setauth($authcount,$au->{'credit-name'}->{'content'});
+            $auth .= $au->{'credit-name'}->{'content'}.", ";
+          }
+        }
+      }
+      $r->_setauthcount($authcount);
+      
+      if ($cite->{'work-citation'}->{'work-citation-type'} =~ m/bibtex/) {
+        # we have a bibtex reference, extract some extra info
+        # -- seems better to use crossref as this content can be messy
+        my $bibtex = $cite->{'work-citation'}->{'citation'};
+        open my $fh, '<', \$bibtex;
+        my $parser = BibTeX::Parser->new($fh);
+        my $entry = $parser->next;
+        if ($entry->parse_ok) {
+          if (defined $entry->field('volume')) {$r->_setvolume($entry->field('volume'))};
+          if (defined $entry->field('issue')) {$r->_setissue($entry->field('issue'))};
+          if (defined $entry->field('pages')) {
+            my $pages = $entry->field('pages');
+            (my $s, my $e) = ($pages =~ /([0-9]+)-+([0-9]+)/ );
+            if (defined $s) { $r->_setspage($s); }
+            if (defined $e) { $r->_setepage($e); }
+          }
+          if (defined $entry->field('journal')) {
+            $r->_setjtitle($entry->field('journal'));
+          } elsif (defined $entry->field('booktitle')) {
+            $r->_setjtitle($entry->field('booktitle'));
+          }
+          my $jtitle = $r->jtitle;
+          if (defined $jtitle ) {
+            # tidy up
+            $jtitle =~ s/[\{\}]//g;
+            $jtitle =~ s/\\textquotesingle/\\'/g;
+            $r->_setjtitle($jtitle);
+          }
+        }
+      }
+      $r->_setscore(1);
+      $r->{ref}->{'query'} = $auth." ".$temp; # temporary hack, need to add _setquery method to Bib::CrossRef.
+      # add manually constructed record
+      $self->append($r);
     }
+    $self->_split_duplicates();
   } else {
     $self->_err("Problem with orcid.org: ".$res->status_line);
   }
@@ -335,7 +536,7 @@ sub send_resp {
  
 =head1 NAME
  
-Bib::Tools - for managing collections of Bib::CrossRef references.
+Bib::Tools - For managing collections of Bib::CrossRef references.
  
 =head1 SYNOPSIS
 
@@ -420,6 +621,15 @@ Uses the ORCID API to extract citations for the specified user identifier.  If p
 and then resolved using crossref.  Please bear in mind that ORCID provide a free service -- do rate limit queries if you have
 a large number to make.
 
+=head2 add_dblp
+
+ $refs->add_dblp($url);
+ 
+Uses DBLP XML API to extract citations.  If possible, the DOI is obtained from ORCID
+and then resolved using crossref.   E.g. 
+
+ $refs->add_dblp('http://www.informatik.uni-trier.de/~ley/pers/xx/l/Leith:Douglas_J=');
+ 
 =head2 add_details
 
  $refs->add_details(@lines);
@@ -484,12 +694,19 @@ Returns the $i citation from the list with DOIs.  This can be used to walk the l
 
 Returns the $i citation from the list without DOIs
 
+=head2 append
+
+  my $ref = Bib::CrossRef->new;
+  $refs->append($ref);
+
+Adds a Bib::CrossRef to end of a Bib::Tools list of objects
+
 =head1 EXPORTS
  
 You can export the following functions if you do not want to use the object orientated interface:
 
-sethtml clearhtml add_details add_google add_google_search add_orcid add_fromfile
-send_resp print print_nodoi num num_nodoi getref getref_nodoi
+sethtml clearhtml add_details add_google add_google_search add_orcid add_fromfile add_dblp
+send_resp print print_nodoi num num_nodoi getref getref_nodoi append
 
 The tag C<all> is available to easily export everything:
  
@@ -508,6 +725,7 @@ A simple web interface to Bib::Tools is contained in the scripts folder.  This c
  <p>Use ORCID id: <INPUT type="text" name="orcid" size="30"></p>
  <p>Use Google Scholar personal page: <INPUT type="text" name="google" size="128"></p>
  <p>Use Google Scholar search page: <INPUT type="text" name="google2" size="128"></p>
+ <p>Use DBLP page: <INPUT type="text" name="dblp" size="128"></p>
  <p>Enter references, one per line:</p>
  <textarea name="refs" rows="10" cols="128" form="in"></textarea><br>
  <INPUT type="submit" value="Submit">
@@ -545,6 +763,17 @@ A simple web interface to Bib::Tools is contained in the scripts folder.  This c
    $refs->add_google_search($google2);
  }
 
+ my $dblp = scalar $q->param('dblp');
+ if (length($dblp) > 5) {
+   if (!($dblp =~ m/^http/)) { $dblp = "http://".$dblp;}
+   if ($dblp =~ m/http:\/\/dblp.uni-trier.de\/pers\/xx\/l\/.+/) {
+      # looks like a valid dblp url
+      $refs->add_dblp($dblp);
+   } else {
+      print "<p style='color:red'>DBLP url looks invalid: ", $dblp,"</p>";
+   }
+ }
+
  my @values = $q->multi_param('refs');
  foreach my $value (@values) {
    open my $fh, "<", \$value; #NB: CGI has already carried out URL decoding
@@ -556,7 +785,7 @@ A simple web interface to Bib::Tools is contained in the scripts folder.  This c
 
 =head1 VERSION
  
-Ver 0.02
+Ver 0.03
  
 =head1 AUTHOR
  
