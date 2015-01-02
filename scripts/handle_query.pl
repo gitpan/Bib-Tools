@@ -34,4 +34,5 @@ foreach my $value (@values) {
   open my $fh, "<", \$value;
   $refs->add_fromfile($fh);
 }      
+$refs->sethtml;
 print $refs->send_resp;

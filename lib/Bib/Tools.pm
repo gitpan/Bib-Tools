@@ -26,7 +26,7 @@ use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS @ISA);
 #use LWP::Protocol::https;
 #use Data::Dumper;
 
-$VERSION = '0.01';
+$VERSION = '0.02';
 @ISA = qw(Exporter);
 @EXPORT = qw();
 @EXPORT_OK = qw(
@@ -551,11 +551,12 @@ A simple web interface to Bib::Tools is contained in the scripts folder.  This c
    $refs->add_fromfile($fh);
  }
 
+ $refs->sethtml;
  print $refs->send_resp;
 
 =head1 VERSION
  
-Ver 0.01
+Ver 0.02
  
 =head1 AUTHOR
  
