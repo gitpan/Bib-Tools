@@ -21,17 +21,18 @@ use HTML::TreeBuilder::XPath;
 use XML::Simple qw(XMLin);
 use BibTeX::Parser qw(new next);
 use IO::File;
+use WWW::Search;
 #use Data::Dumper;
 use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS @ISA);
 
 #use LWP::Protocol::https;
-#use Data::Dumper;
+use Data::Dumper;
 
-$VERSION = '0.03';
+$VERSION = '0.06';
 @ISA = qw(Exporter);
 @EXPORT = qw();
 @EXPORT_OK = qw(
-sethtml clearhtml add_details add_google add_google_search add_orcid add_fromfile add_dblp
+sethtml clearhtml add_details add_google add_google_search add_orcid add_fromfile add_dblp add_pubmed
 send_resp print print_nodoi num num_nodoi getref getref_nodoi append
 );
 %EXPORT_TAGS = (all => \@EXPORT_OK);
@@ -201,11 +202,9 @@ sub add_dblp {
     my $num=0;
     foreach my $c (@{$cites[0]}) {
       $num++; if ($maxnum>0 && $num>$maxnum) {last;}  # mainly for testing
-      my $ref={};
       my $cite;
       my @k = keys %{$c};
-      $ref->{'genre'} = $k[0];
-      $cite = $c->{$ref->{'genre'}};
+      $cite = $c->{$k[0]};
       my $ee = $cite->{'ee'};
       if ($ee =~ m/dx.doi.org/) {
         # we have a DOI, lets call crossref
@@ -237,12 +236,19 @@ sub add_dblp {
       
       # we got a poor match, lets use the rest of the dblp data
       $r = Bib::CrossRef->new;
+      if (exists $cite->{'publtype'}) {
+        $r->_setgenre($cite->{'publtype'});
+      } elsif ($k[0] =~ m/article/) {
+        $r->_setgenre('article');
+      } elsif ($k[0] =~ m/inproceedings/) {
+        $r->_setgenre('proceeding');
+      } else {
+        $r->_setgenre($k[0]);
+      }
       $r->_setatitle($cite->{'title'});
       if (defined $cite->{'journal'}) {
-        $r->_setgenre('article');
         $r->_setjtitle($cite->{'journal'});
       } elsif (defined $cite->{'booktitle'}) {
-        $r->_setgenre('proceeding');
         $r->_setjtitle($cite->{'booktitle'});
       }
       $auth='';
@@ -266,8 +272,11 @@ sub add_dblp {
         if (defined $bits[0]) {$r->_setspage($bits[0]);}
         if (defined $bits[1]) {$r->_setepage($bits[1]);}
       }
+      if (($cite->{'ee'} =~ m/^http:\/\//))  {
+        $r->_seturl($cite->{'ee'});
+      }
       $r->_setscore(1);
-      $r->{ref}->{'query'} = $auth." ".$temp; # temporary hack, need to add _setquery method to Bib::CrossRef.
+      $r->_setquery($auth." ".$temp);
       # add manually constructed record
       $self->append($r);
     }
@@ -425,7 +434,7 @@ sub add_orcid {
         }
       }
       $r->_setscore(1);
-      $r->{ref}->{'query'} = $auth." ".$temp; # temporary hack, need to add _setquery method to Bib::CrossRef.
+      $r->_setquery($auth." ".$temp);
       # add manually constructed record
       $self->append($r);
     }
@@ -433,6 +442,86 @@ sub add_orcid {
   } else {
     $self->_err("Problem with orcid.org: ".$res->status_line);
   }
+}
+
+sub _find_pubmed {
+  my $c = shift @_;
+  my $name = shift @_;
+  my $term = shift @_;
+  foreach my $item (@{$c}) {
+    if ($item->{'Name'} eq $name) {
+      return $item->{$term};
+    }
+  }
+  return undef;
+}
+
+sub add_pubmed {
+  # add results from a pubmed query
+  my ($self,$q) = @_;
+
+  my $ua = LWP::UserAgent->new;
+  $q =~ s/\s+/+/g;
+  my $req = HTTP::Request->new(GET => "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi?usehistory=y&db=pubmed&term=".$q);
+  my $res = $ua->request($req);
+  if ($res->is_success) {
+    my $web = $1 if ($res->decoded_content =~ /<WebEnv>(\S+)<\/WebEnv>/);
+    my $key = $1 if ($res->decoded_content =~ /<QueryKey>(\d+)<\/QueryKey>/);
+    $req = HTTP::Request->new(GET => "http://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&query_key=$key&WebEnv=$web");
+    $res = $ua->request($req);
+    if ($res->is_success) {
+      my $xs = XML::Simple->new();
+      my $data = $xs->XMLin($res->decoded_content);
+      my @cites = $data->{'DocSum'};
+      foreach my $cite (@{$cites[0]}) {
+        my $c = $cite->{'Item'};
+        if (ref($c) ne "ARRAY") {next;}
+        my $r = Bib::CrossRef->new;
+        my $doi = _find_pubmed($c,'DOI','content');
+        if (defined $doi) {
+          # PubMed is reliable, no need to call crossref
+        #  my $r = Bib::CrossRef->new;
+        #  $r->parse_text($doi);
+        #  $self->append($r);
+        #  next; # move on
+          $r->_setdoi($doi);
+          $r->_seturl('http://dx.doi.org/'.$doi);
+        }
+        $r->_setjtitle(_find_pubmed($c,'FullJournalName','content'));
+        $r->_setatitle(_find_pubmed($c,'Title','content'));
+        my $date = _find_pubmed($c,'PubDate','content');
+        $date =~ m/^([0-9][0-9][0-9][0-9])/;
+        $r->_setdate($1); # extract the year
+        $r->_setvolume(_find_pubmed($c,'Volume','content'));
+        $r->_setissue(_find_pubmed($c,'Issue','content'));
+        my $p = _find_pubmed($c,'Pages','content');
+        my @bits = split('-',$p);
+        $r->_setspage($bits[0]); $r->_setepage($bits[1]);
+        
+        my $aulist = _find_pubmed($c,'AuthorList','Item');
+        my $authcount=0;
+        if (ref($aulist) ne "ARRAY") {
+          $authcount = 1;
+          $r->_setauth($authcount,$aulist->{'content'});
+        } else {
+          foreach my $au (@{$aulist}) {
+            $authcount++;
+            $r->_setauth($authcount,$au->{'content'});
+          }
+        }
+        $r->_setauthcount($authcount);
+        my $g = _find_pubmed($c,'FullJournalName','Item');
+        $r->_setgenre($g->{'content'});
+        $r->_setscore(1);
+        #$r->_setquery($auth." ".$temp);
+        # add manually constructed record
+        $self->append($r);
+      }
+    }
+    $self->_split_duplicates();
+    return;
+  }
+  $self->_err("Problem with http://eutils.ncbi.nlm.nih.gov: ".$res->status_line);
 }
 
 sub add_fromfile {
@@ -513,7 +602,7 @@ sub send_resp {
   
   my $self = shift @_;
 
-  if ($self->num==0 && $self->num_doi==0) {return ''};
+  if ($self->num==0 && $self->num_nodoi==0) {return ''};
   my $html = $self->{html};
   $self->sethtml; # force use of html
   my $out='';
@@ -573,6 +662,14 @@ Bib::Tools - For managing collections of Bib::CrossRef references.
 
  $refs->add_orcid('0000-0003-4056-4014');
 
+# or as text from PubMed
+
+ $refs->add_pubmed('mills kh[author]');
+ 
+# or as text from DBLP
+
+ $refs->add_dblp('http://www.informatik.uni-trier.de/~ley/pers/xx/l/Leith:Douglas_J=');
+
 # Bib:Tools will use Bib:CrossRef to try to resolve the supplied text into full citations.  It will try to 
 detect duplicates using DOI information, so its fairly safe to import from multiple sources without creating 
 clashes.  Full citations without DOI information are kept separately from those with a DOI for better quality
@@ -617,18 +714,23 @@ method is needed for search and home pages due to the different html tags used.
 
  $refs->add_orcid($orcid_id);
  
-Uses the ORCID API to extract citations for the specified user identifier.  If possible, the DOI is obtained from ORCID
-and then resolved using crossref.  Please bear in mind that ORCID provide a free service -- do rate limit queries if you have
-a large number to make.
+Uses the ORCID API to extract citations for the specified user identifier.  If possible, the DOI is obtained and then resolved using crossref.
 
 =head2 add_dblp
 
  $refs->add_dblp($url);
  
-Uses DBLP XML API to extract citations.  If possible, the DOI is obtained from ORCID
-and then resolved using crossref.   E.g. 
+Uses DBLP XML API to extract citations.  If possible, the DOI is obtained and then resolved using crossref.   E.g.
 
  $refs->add_dblp('http://www.informatik.uni-trier.de/~ley/pers/xx/l/Leith:Douglas_J=');
+ 
+=head2 add_pubmed
+ 
+ $refs->add_dblp($query);
+ 
+Uses PubMed API to extract citations listed in response to a query. E.g.
+
+ $refs->add_pubmed('mills kh[author]');
  
 =head2 add_details
 
@@ -705,7 +807,7 @@ Adds a Bib::CrossRef to end of a Bib::Tools list of objects
  
 You can export the following functions if you do not want to use the object orientated interface:
 
-sethtml clearhtml add_details add_google add_google_search add_orcid add_fromfile add_dblp
+sethtml clearhtml add_details add_google add_google_search add_orcid add_fromfile add_dblp add_pubmed
 send_resp print print_nodoi num num_nodoi getref getref_nodoi append
 
 The tag C<all> is available to easily export everything:
@@ -723,9 +825,11 @@ A simple web interface to Bib::Tools is contained in the scripts folder.  This c
  <h3>Import References</h3>
  <form action="handle_query.pl" method="POST" id="in">
  <p>Use ORCID id: <INPUT type="text" name="orcid" size="30"></p>
+ <p>(to import from Scopus, follow these <a href="http://orcid.scopusfeedback.com/">instructions</a></p>)
  <p>Use Google Scholar personal page: <INPUT type="text" name="google" size="128"></p>
  <p>Use Google Scholar search page: <INPUT type="text" name="google2" size="128"></p>
  <p>Use DBLP page: <INPUT type="text" name="dblp" size="128"></p>
+ <p>Use PubMed query: <INPUT type="text" name="query" size="128"></p>
  <p>Enter references, one per line:</p>
  <textarea name="refs" rows="10" cols="128" form="in"></textarea><br>
  <INPUT type="submit" value="Submit">
@@ -774,6 +878,11 @@ A simple web interface to Bib::Tools is contained in the scripts folder.  This c
    }
  }
 
+ my $pubmed = scalar $q->param('pubmed');
+ if (length($pubmed) > 5) {
+   $refs->add_pubmed($pubmed);
+ }
+ 
  my @values = $q->multi_param('refs');
  foreach my $value (@values) {
    open my $fh, "<", \$value; #NB: CGI has already carried out URL decoding
@@ -785,7 +894,7 @@ A simple web interface to Bib::Tools is contained in the scripts folder.  This c
 
 =head1 VERSION
  
-Ver 0.03
+Ver 0.06
  
 =head1 AUTHOR
  

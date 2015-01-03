@@ -29,7 +29,6 @@ if (length($google2) > 5) {
   $refs->add_google_search($google2);
 }
 my $dblp = scalar $q->param('dblp');
-#http://dblp.uni-trier.de/pers/xx/l/Leith:Douglas_J=.xml
 if (length($dblp) > 5) {
   if (!($dblp =~ m/^http/)) { $dblp = "http://".$dblp;}
   if ($dblp =~ m/http:\/\/dblp.uni-trier.de\/pers\/xx\/l\/.+/) {
@@ -39,6 +38,11 @@ if (length($dblp) > 5) {
      print "<p style='color:red'>DBLP url looks invalid: ", $dblp,"</p>";
   }
 }
+my $pubmed = scalar $q->param('pubmed');
+if (length($pubmed) > 5) {
+  $refs->add_pubmed($pubmed);
+}
+
 my @values = $q->multi_param('refs');
 foreach my $value (@values) {
   #NB: CGI has already carried out URL decoding
