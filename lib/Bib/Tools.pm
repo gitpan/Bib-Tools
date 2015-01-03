@@ -21,14 +21,13 @@ use HTML::TreeBuilder::XPath;
 use XML::Simple qw(XMLin);
 use BibTeX::Parser qw(new next);
 use IO::File;
-use WWW::Search;
 #use Data::Dumper;
 use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS @ISA);
 
 #use LWP::Protocol::https;
 use Data::Dumper;
 
-$VERSION = '0.06';
+$VERSION = '0.07';
 @ISA = qw(Exporter);
 @EXPORT = qw();
 @EXPORT_OK = qw(
@@ -894,7 +893,7 @@ A simple web interface to Bib::Tools is contained in the scripts folder.  This c
 
 =head1 VERSION
  
-Ver 0.06
+Ver 0.07
  
 =head1 AUTHOR
  
