@@ -32,10 +32,19 @@
       },
       "runtime" : {
          "requires" : {
-            "Test::More" : 0
+            "Bib::CrossRef" : "0.05",
+            "BibTeX::Parser" : 0,
+            "HTML::Entities" : 0,
+            "HTML::TreeBuilder::XPath" : 0,
+            "IO::File" : 0,
+            "JSON" : 0,
+            "LWP::UserAgent" : 0,
+            "Test::More" : 0,
+            "URI::Escape" : 0,
+            "XML::Simple" : 0
          }
       }
    },
    "release_status" : "stable",
-   "version" : "0.07"
+   "version" : "0.08"
 }

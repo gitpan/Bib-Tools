@@ -27,7 +27,7 @@ use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS @ISA);
 #use LWP::Protocol::https;
 use Data::Dumper;
 
-$VERSION = '0.07';
+$VERSION = '0.08';
 @ISA = qw(Exporter);
 @EXPORT = qw();
 @EXPORT_OK = qw(
@@ -824,7 +824,7 @@ A simple web interface to Bib::Tools is contained in the scripts folder.  This c
  <h3>Import References</h3>
  <form action="handle_query.pl" method="POST" id="in">
  <p>Use ORCID id: <INPUT type="text" name="orcid" size="30"></p>
- <p>(to import from Scopus, follow these <a href="http://orcid.scopusfeedback.com/">instructions</a></p>)
+ <p>(to import from Scopus, follow these <a href="http://orcid.scopusfeedback.com/">instructions</a>)</p>
  <p>Use Google Scholar personal page: <INPUT type="text" name="google" size="128"></p>
  <p>Use Google Scholar search page: <INPUT type="text" name="google2" size="128"></p>
  <p>Use DBLP page: <INPUT type="text" name="dblp" size="128"></p>
@@ -893,7 +893,7 @@ A simple web interface to Bib::Tools is contained in the scripts folder.  This c
 
 =head1 VERSION
  
-Ver 0.07
+Ver 0.08
  
 =head1 AUTHOR
  
