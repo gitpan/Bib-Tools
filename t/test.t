@@ -44,12 +44,12 @@ ok($out = $refs->print);
 is($out,$out1."\n");
 ok($out=$refs->send_resp);
 my $expected=<<"END";
-<!DOCTYPE HTML><html><head><meta charset="utf-8"><meta http-equiv="Content-Type"></head><body><table><tr style="font-weight:bold"><td></td><td>Use</td><td></td><td>Type</td><td><Year></td><td>Authors</td><td>Title</td><td>Journal</td><td>Volume</td><td>Issue</td><td>Pages</td><td>DOI</td><td>url</td></tr>
-<tr><td>1</td><td><input type="checkbox" name="1" value="" checked></td><td></td><td contenteditable="true">article</td><td contenteditable="true">2015</td><td contenteditable="true">D. J. Leith, W. E. Leithead, </td><td contenteditable="true">Survey of gain-scheduling analysis and design</td><td contenteditable="true">International Journal of Control</td><td contenteditable="true">1</td><td contenteditable="true">2</td><td contenteditable="true">1001-1025</td><td contenteditable="true">10.1080/002071700411304</td><td contenteditable="true"></td></tr>
+<!DOCTYPE HTML><html><head><meta charset="utf-8"><meta http-equiv="Content-Type"><script src="post.js"></script></head><body><table id="doi"><tr style="font-weight:bold"><td></td><td>Use</td><td></td><td>Type</td><td>Year</td><td>Authors</td><td>Title</td><td>Journal</td><td>Volume</td><td>Issue</td><td>Pages</td><td>DOI</td><td>url</td></tr>
+<tr id="cite"><td>1</td><td><input type="checkbox" name="1" value="" checked></td><td></td><td contenteditable="true">article</td><td contenteditable="true">2015</td><td contenteditable="true">D. J. Leith and W. E. Leithead</td><td contenteditable="true">Survey of gain-scheduling analysis and design</td><td contenteditable="true">International Journal of Control</td><td contenteditable="true">1</td><td contenteditable="true">2</td><td contenteditable="true">1001-1025</td><td contenteditable="true">10.1080/002071700411304</td><td contenteditable="true"></td></tr>
 <tr><td colspan=12 style="color:#C0C0C0"></td></tr>
 
 </table>
-</body></html>
+<input id="Submit" type="button" value="Submit" onclick="GetCellValues(\'doi\');" /><div id="out"></div></body></html>
 END
 is($out."\n",$expected);
 
@@ -64,13 +64,13 @@ $refs->add_details(@lines);
 SKIP: {
   skip "Optional network tests", 7 unless (defined ${$refs->{refs}}[0]);
 
-  my $expected1 ='article: 2011, I Dangerfield, D Malone, D J Leith, \'Incentivising Fairness and Policing Nodes in WiFi\'. IEEE Communications Letters, 15(5),pp500-502, DOI: 10.1109/lcomm.2011.040111.102111, http://dx.doi.org/10.1109/lcomm.2011.040111.102111';
+  my $expected1 ='article: 2011, I Dangerfield and D Malone and D J Leith, \'Incentivising Fairness and Policing Nodes in WiFi\'. IEEE Communications Letters, 15(5),pp500-502, DOI: 10.1109/lcomm.2011.040111.102111, http://dx.doi.org/10.1109/lcomm.2011.040111.102111';
   is(${$refs->{refs}}[0]->print,$expected1);
-  my $expected2='article: 2010, Domenico Giustiniano, David Malone, Douglas J. Leith, Konstantina Papagiannaki, \'Measuring Transmission Opportunities in 802.11 Links\'. IEEE/ACM Transactions on Networking, 18(5),pp1516-1529, DOI: 10.1109/tnet.2010.2051038, http://dx.doi.org/10.1109/tnet.2010.2051038';
+  my $expected2='article: 2010, Domenico Giustiniano and David Malone and Douglas J. Leith and Konstantina Papagiannaki, \'Measuring Transmission Opportunities in 802.11 Links\'. IEEE/ACM Transactions on Networking, 18(5),pp1516-1529, DOI: 10.1109/tnet.2010.2051038, http://dx.doi.org/10.1109/tnet.2010.2051038';
   is(${$refs->{refs}}[1]->print,$expected2);
   ok($out=$refs->print());
-$expected1='1. article: 2011, I Dangerfield, D Malone, D J Leith, \'Incentivising Fairness and Policing Nodes in WiFi\'. IEEE Communications Letters, 15(5),pp500-502, DOI: 10.1109/lcomm.2011.040111.102111, http://dx.doi.org/10.1109/lcomm.2011.040111.102111
-2. article: 2010, Domenico Giustiniano, David Malone, Douglas J. Leith, Konstantina Papagiannaki, \'Measuring Transmission Opportunities in 802.11 Links\'. IEEE/ACM Transactions on Networking, 18(5),pp1516-1529, DOI: 10.1109/tnet.2010.2051038, http://dx.doi.org/10.1109/tnet.2010.2051038
+$expected1='1. article: 2011, I Dangerfield and D Malone and D J Leith, \'Incentivising Fairness and Policing Nodes in WiFi\'. IEEE Communications Letters, 15(5),pp500-502, DOI: 10.1109/lcomm.2011.040111.102111, http://dx.doi.org/10.1109/lcomm.2011.040111.102111
+2. article: 2010, Domenico Giustiniano and David Malone and Douglas J. Leith and Konstantina Papagiannaki, \'Measuring Transmission Opportunities in 802.11 Links\'. IEEE/ACM Transactions on Networking, 18(5),pp1516-1529, DOI: 10.1109/tnet.2010.2051038, http://dx.doi.org/10.1109/tnet.2010.2051038
 ';  is($out,$expected1);
 
 my $text=<<"END";

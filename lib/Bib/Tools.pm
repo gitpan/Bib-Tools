@@ -27,7 +27,7 @@ use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS @ISA);
 #use LWP::Protocol::https;
 use Data::Dumper;
 
-$VERSION = '0.08';
+$VERSION = '0.09';
 @ISA = qw(Exporter);
 @EXPORT = qw();
 @EXPORT_OK = qw(
@@ -569,10 +569,11 @@ sub getref_nodoi {
 sub print {
   # display a list of references
   my $self = shift @_;
+  my $id = shift @_;
   
   if ($self->num==0) {return ''};
   my $out='';
-  if ($self->{html}) {$out.=$self->getref(0)->printheader;}
+  if ($self->{html}) {$out.=$self->getref(0)->printheader($id);}
   for (my $i=0; $i< $self->num; $i++) {
     if ($self->{html}) {$self->getref($i)->sethtml;} else {$self->getref($i)->clearhtml;}
     $out .= $self->getref($i)->print($i+1);
@@ -585,10 +586,11 @@ sub print {
 sub print_nodoi {
   # display a list of references
   my $self = shift @_;
+  my $id = shift @_;
   
   if ($self->num_nodoi==0) {return ''};
   my $out='';
-  if ($self->{html}) {$out.=$self->getref_nodoi(0)->printheader;}
+  if ($self->{html}) {$out.=$self->getref_nodoi(0)->printheader($id);}
   for (my $i=0; $i< $self->num_nodoi; $i++) {
     if ($self->{html}) {$self->getref_nodoi($i)->sethtml;} else {$self->getref_nodoi($i)->clearhtml;}
     $out .= $self->getref_nodoi($i)->print($i+1);
@@ -607,12 +609,14 @@ sub send_resp {
   my $out='';
   #$out.="Content-Type: text/html;\n\n"; # html header
   $out.=sprintf "%s", '<!DOCTYPE HTML>',"\n";
-  $out.=sprintf "%s", '<html><head><meta charset="utf-8"><meta http-equiv="Content-Type"></head><body>',"\n";
-  $out.=sprintf "%s", $self->print;
+  $out.=sprintf "%s", '<html><head><meta charset="utf-8"><meta http-equiv="Content-Type">';
+  $out.=sprintf "%s", '<script src="post.js"></script></head><body>',"\n";
+  $out.=sprintf "%s", $self->print('doi');
   if ($self->num_nodoi>0) {
     $out.=sprintf "%s", '<h3>These have no DOIs:</h3>',"\n";
-    $out.=sprintf "%s", $self->print_nodoi;
+    $out.=sprintf "%s", $self->print_nodoi('nodoi');
   }
+  $out.=sprintf "%s", '<input id="Submit" type="button" value="Submit" onclick="GetCellValues(\'doi\');" /><div id="out"></div>';
   $out.=sprintf "%s", '</body></html>';
   $self->{html} = $html; # restore previous setting
   return $out;
@@ -823,14 +827,27 @@ A simple web interface to Bib::Tools is contained in the scripts folder.  This c
  <html><head><meta http-equiv="Content-Type" content="text/html;charset=UTF-8"></head><body>
  <h3>Import References</h3>
  <form action="handle_query.pl" method="POST" id="in">
- <p>Use ORCID id: <INPUT type="text" name="orcid" size="30"></p>
- <p>(to import from Scopus, follow these <a href="http://orcid.scopusfeedback.com/">instructions</a>)</p>
- <p>Use Google Scholar personal page: <INPUT type="text" name="google" size="128"></p>
- <p>Use Google Scholar search page: <INPUT type="text" name="google2" size="128"></p>
- <p>Use DBLP page: <INPUT type="text" name="dblp" size="128"></p>
- <p>Use PubMed query: <INPUT type="text" name="query" size="128"></p>
- <p>Enter references, one per line:</p>
- <textarea name="refs" rows="10" cols="128" form="in"></textarea><br>
+ <table>
+ <tr><td>Use ORCID id:<br><small style="color:#C0C0C0">e.g. 0000-0003-4056-4014</small></td>
+ <td><INPUT type="text" name="orcid" size="128"></p></td>
+ </tr>
+ <tr><td colspan=2>(to import from Scopus, follow these <a href="http://orcid.scopusfeedback.com/">instructions</a>)</td></tr>
+ <tr><td>Use Google Scholar personal page:<br>
+ <small style="color:#C0C0C0">e.g. http://scholar.google.com/citations?user=n8dX1fUAAAAJ</small></td>
+ <td><INPUT type="text" name="google" size="128"></p></td>
+ </tr>
+ <tr><td>Use Google Scholar search page:<br>
+ <small style="color:#C0C0C0">e.g. http://scholar.google.com/scholar?q=andr%C3%A9s+garcia+saavedra</small></td>
+ <td><INPUT type="text" name="google2" size="128"></p></td>
+ </tr>
+ <tr><td>Use DBLP page:<br>
+ <small style="color:#C0C0C0">e.g. 'http://www.informatik.uni-trier.de/~ley/pers/xx/l/Leith:Douglas_J=</small></td>
+ <td> <INPUT type="text" name="dblp" size="128"></td></tr>
+ <tr><td>Use PubMed query:<br>
+ <small style="color:#C0C0C0">e.g. mills kh[author]</small></td>
+ <td> <INPUT type="text" name="query" size="128"></td></tr>
+ </table>
+ <p>Enter references, one per line:</p><textarea name="refs" rows="10" cols="128" form="in"></textarea><br>
  <INPUT type="submit" value="Submit">
  </form>
  </body></html>
@@ -893,7 +910,7 @@ A simple web interface to Bib::Tools is contained in the scripts folder.  This c
 
 =head1 VERSION
  
-Ver 0.08
+Ver 0.09
  
 =head1 AUTHOR
  
