@@ -27,7 +27,7 @@ use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS @ISA);
 #use LWP::Protocol::https;
 use Data::Dumper;
 
-$VERSION = '0.09';
+$VERSION = '0.10';
 @ISA = qw(Exporter);
 @EXPORT = qw();
 @EXPORT_OK = qw(
@@ -819,7 +819,7 @@ The tag C<all> is available to easily export everything:
 
 =head1 WEB INTERFACE
 
-A simple web interface to Bib::Tools is contained in the scripts folder.  This consists of two files: query.html and handle_query.pl.
+A simple web interface to Bib::Tools is contained in the examples folder.  This consists of three files: query.html, handle_query.pl and post.js.
 
 =head2 query.html
 
@@ -848,7 +848,7 @@ A simple web interface to Bib::Tools is contained in the scripts folder.  This c
  <td> <INPUT type="text" name="query" size="128"></td></tr>
  </table>
  <p>Enter references, one per line:</p><textarea name="refs" rows="10" cols="128" form="in"></textarea><br>
- <INPUT type="submit" value="Submit">
+ <INPUT type="submit" value="Submit">(can be slow, be patient)
  </form>
  </body></html>
 
@@ -908,9 +908,34 @@ A simple web interface to Bib::Tools is contained in the scripts folder.  This c
  $refs->sethtml;
  print $refs->send_resp;
 
+=head2 post.js
+
+ function GetCellValues(dataTable) {
+    var table = document.getElementById(dataTable);
+    var i = 0; var Obj = [];
+    for (var r = 0; r < table.rows.length; r++) {
+        if (table.rows[r].id == 'cite') {
+          Obj[i] = [];
+          var row = table.rows[r].cells;
+          for (var c = 0; c < row.length; c++){
+            var check = row[c].getElementsByTagName('Input');
+            if (check.length>0){
+              if (check[0].checked) {Obj[i][c]=1;} else {Obj[i][c]=0;}
+            } else {
+              Obj[i][c] =row[c].innerHTML;
+            }
+          }
+          i = i+1;
+        }
+    }
+    var jsonString = JSON.stringify(Obj);
+    document.getElementById('out').innerHTML = jsonString;
+    // or POST using ajax
+ }
+
 =head1 VERSION
  
-Ver 0.09
+Ver 0.10
  
 =head1 AUTHOR
  
