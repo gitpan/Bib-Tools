@@ -27,7 +27,7 @@ use vars qw($VERSION @EXPORT @EXPORT_OK %EXPORT_TAGS @ISA);
 #use LWP::Protocol::https;
 use Data::Dumper;
 
-$VERSION = '0.10';
+$VERSION = '0.11';
 @ISA = qw(Exporter);
 @EXPORT = qw();
 @EXPORT_OK = qw(
@@ -616,7 +616,7 @@ sub send_resp {
     $out.=sprintf "%s", '<h3>These have no DOIs:</h3>',"\n";
     $out.=sprintf "%s", $self->print_nodoi('nodoi');
   }
-  $out.=sprintf "%s", '<input id="Submit" type="button" value="Submit" onclick="GetCellValues(\'doi\');" /><div id="out"></div>';
+  $out.=sprintf "%s", '<input id="Submit" type="button" value="Submit" onclick="GetCellValues(\'doi\');GetCellValues(\'nodoi\');" /><div id="out"></div>';
   $out.=sprintf "%s", '</body></html>';
   $self->{html} = $html; # restore previous setting
   return $out;
@@ -912,30 +912,31 @@ A simple web interface to Bib::Tools is contained in the examples folder.  This 
 
  function GetCellValues(dataTable) {
     var table = document.getElementById(dataTable);
+    if (table == null) return;
     var i = 0; var Obj = [];
-    for (var r = 0; r < table.rows.length; r++) {
+    var names = table.rows[0];
+    for (var r = 1; r < table.rows.length; r++) {
         if (table.rows[r].id == 'cite') {
-          Obj[i] = [];
           var row = table.rows[r].cells;
-          for (var c = 0; c < row.length; c++){
-            var check = row[c].getElementsByTagName('Input');
-            if (check.length>0){
-              if (check[0].checked) {Obj[i][c]=1;} else {Obj[i][c]=0;}
-            } else {
-              Obj[i][c] =row[c].innerHTML;
+          var check = table.rows[r].getElementsByTagName('Input');
+          if (check.length>0){
+            Obj[i] = {};
+            for (var c = 3; c < row.length; c++){
+              var tag = names.cells[c].textContent;
+              Obj[i][tag] =row[c].textContent;
             }
+            i = i+1;
           }
-          i = i+1;
         }
     }
     var jsonString = JSON.stringify(Obj);
-    document.getElementById('out').innerHTML = jsonString;
+    document.getElementById('out').innerHTML = document.getElementById('out').innerHTML+jsonString;
     // or POST using ajax
  }
 
 =head1 VERSION
  
-Ver 0.10
+Ver 0.11
  
 =head1 AUTHOR
  

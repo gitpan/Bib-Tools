@@ -49,7 +49,7 @@ my $expected=<<"END";
 <tr><td colspan=12 style="color:#C0C0C0"></td></tr>
 
 </table>
-<input id="Submit" type="button" value="Submit" onclick="GetCellValues(\'doi\');" /><div id="out"></div></body></html>
+<input id="Submit" type="button" value="Submit" onclick="GetCellValues(\'doi\');GetCellValues('nodoi');" /><div id="out"></div></body></html>
 END
 is($out."\n",$expected);
 

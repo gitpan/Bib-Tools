@@ -1,34 +1,47 @@
-function GetCellValues(dataTable) 
-{
+function GetCellValues(dataTable) {
+    // Generate JSON with details of selected documents
     var table = document.getElementById(dataTable);
+    if (table == null) return;
     var i = 0; var Obj = [];
-    for (var r = 0; r < table.rows.length; r++) {
+    var names = table.rows[0];
+    for (var r = 1; r < table.rows.length; r++) {
         if (table.rows[r].id == 'cite') {
-          Obj[i] = [];
           var row = table.rows[r].cells;
-          for (var c = 0; c < row.length; c++){        
-            var check = row[c].getElementsByTagName('Input');
-            if (check.length>0){
-              if (check[0].checked) {Obj[i][c]=1;} else {Obj[i][c]=0;}
-            } else {
-              Obj[i][c] =row[c].innerHTML;
+          var check = table.rows[r].getElementsByTagName('Input');
+          if (check.length>0){
+            Obj[i] = {};
+            for (var c = 3; c < row.length; c++){        
+              var tag = names.cells[c].textContent;
+              Obj[i][tag] =row[c].textContent;
             }
+            i = i+1;
           }
-          i = i+1;
         }
     }
     var jsonString = JSON.stringify(Obj);
-    document.getElementById('out').innerHTML = jsonString;
+    document.getElementById('out').innerHTML = document.getElementById('out').innerHTML+jsonString;
     //var XMLHttpRequestObj = FileResort.Utils.createRequest();
     //XMLHttpRequestObj.open("POST", "/handle_table.pl", true);
     //XMLHttpRequestObj.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
     //XMLHttpRequestObj.send(requestData);
 }
 
+//--------------------------------------
+// Code below creates popup for structured input of author details
+//--------------------------------------
+
 function initAuth() {
   // attach popups to every author list cell
-  var rows = document.getElementsByTagName("tr");
-  for (var i = 0; i<rows.length; i++) {
+  SetAuthEvents('doi');
+  SetAuthEvents('nodoi');
+}
+
+function SetAuthEvents(dataTable) {
+  // attach popups to every author list cell
+  var table = document.getElementById(dataTable);
+  if (table == null) return;
+  var rows = table.rows;
+  for (var i = 1; i<rows.length; i++) {
     if (rows[i].id == "cite") {
       var col = rows[i].cells[5];
       col.contentEditable=false;
@@ -38,7 +51,6 @@ function initAuth() {
 }
 
 function ShowAuth(el) {
-
   // get author list
   var s = el.textContent;
   var bits = s.split(/ and /);
@@ -75,7 +87,7 @@ function CloseAuth(el) {
   if (el.value == "Save") {
     // extract author list info
     var auths = m.firstChild.value;
-    auths = auths.replace(/\n/g,' and ');
+    auths = auths.replace(/\n+/g,' and ');
     auths = auths.replace(/^ and /,'');
     auths = auths.replace(/ and $/,'');
     // delete popup
@@ -98,5 +110,5 @@ function HandleAuth() {
   }
 }
 
-// add click event listeners ...
+// add click event listeners to table cells once page has loaded ...
 window.addEventListener("load", initAuth, false);
